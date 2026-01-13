@@ -1,0 +1,317 @@
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { jwtDecode } from 'jwt-decode';
+import authService from '../services/authService';
+
+const AuthContext = createContext({});
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  // const decodeToken = useCallback((tokenString) => {
+  //   console.log('Decoding token:', tokenString ? `${tokenString.substring(0, 50)}...` : 'null');
+    
+  //   if (!tokenString || typeof tokenString !== 'string') {
+  //     console.error('Token is not a valid string');
+  //     return null;
+  //   }
+
+  //   try {
+  //     // Check if it looks like a JWT (should have 3 parts separated by dots)
+  //     const parts = tokenString.split('.');
+  //     // if (parts.length !== 3) {
+  //     //   console.error('Token does not have 3 parts. Parts:', parts.length);
+  //     //   console.error('Token preview:', tokenString.substring(0, 100));
+  //     //   return null;
+  //     // }
+  //     console.log('Token decoded started:', parts[2]);
+  //     const decoded = jwtDecode(parts[2]);
+  //     console.log('Token decoded successfully:', decoded);
+  //     return decoded;
+  //   } catch (error) {
+  //     console.error('Token decode error:', error.message);
+  //     console.error('Error details:', error);
+  //     const decoded1 = jwtDecode("eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9Lnsic3ViIjoidHVoaW4iLCJpYXQiOjE3NjgzMDUxODAsImV4cCI6MTc2ODM5MTU4MH0=");
+  //     console.log('decoded1:', decoded1);
+  //     // Try to see what's in the token
+  //     try {
+  //       const parts = tokenString.split('.');
+  //       console.log('Token parts count:', parts.length);
+  //       console.log('Part 1 (header):', parts[0]);
+  //       console.log('Part 2 (payload) base64:', parts[1]);
+        
+  //       // Try to decode the payload manually
+  //       if (parts[1]) {
+  //         const payload = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+  //         console.log('Manual decode payload:', payload);
+  //       }
+  //     } catch (e) {
+  //       console.error('Failed to manually decode token:', e);
+  //     }
+      
+  //     return null;
+  //   }
+  // }, []);
+  const decodeToken = useCallback((tokenString) => {
+    if (!tokenString) return null;
+  
+    try {
+      const parts = tokenString.split('.');
+      console.log(`Token parts: ${parts.length}`, parts);
+      
+      // STRATEGY 1: Find and parse any JSON object in the token
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (part.startsWith('{') && part.endsWith('}')) {
+          try {
+            const parsed = JSON.parse(part);
+            // Check if it looks like JWT payload (has sub, iat, exp)
+            if (parsed.sub && parsed.iat && parsed.exp) {
+              console.log(`Found payload in part ${i}:`, parsed);
+              return parsed;
+            }
+          } catch (e) {
+            // Not valid JSON, continue
+          }
+        }
+      }
+      
+      // STRATEGY 2: Try to decode base64 parts
+      for (let i = 0; i < parts.length; i++) {
+        try {
+          const part = parts[i];
+          // Skip if it's clearly not base64 (contains { or })
+          if (part.includes('{') || part.includes('}')) continue;
+          
+          const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
+          const paddedBase64 = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+          const decoded = atob(paddedBase64);
+          
+          // Try to parse as JSON
+          const parsed = JSON.parse(decoded);
+          if (parsed.sub && parsed.iat && parsed.exp) {
+            console.log(`Found base64 payload in part ${i}:`, parsed);
+            return parsed;
+          }
+        } catch (e) {
+          // Not base64 or not JSON, continue
+        }
+      }
+      
+      console.error('Could not decode token in any format');
+      return null;
+      
+    } catch (error) {
+      console.error('Manual decode failed:', error.message);
+      return null;
+    }
+  }, []);
+  
+  
+
+  useEffect(() => {
+    if (token) {
+      console.log('Initial token from localStorage:', token ? 'exists' : 'null');
+      const decoded = decodeToken(token);
+      if (decoded) {
+        setUser(decoded);
+        authService.setAuthToken(token);
+        console.log('User set from token:', decoded);
+      } else {
+        console.log('Invalid token in localStorage, clearing...');
+        localStorage.removeItem('token');
+        setToken(null);
+        setUser(null);
+      }
+    }
+    setLoading(false);
+  }, [token, decodeToken]);
+
+  const login = async (credentials) => {
+    console.log('Login attempt with credentials:', { ...credentials, password: '***' });
+    
+    try {
+      const response = await authService.login(credentials);
+      console.log('Login response:', response);
+      console.log('Response data:', response.data);
+      
+      // Debug: Log the entire response structure
+      console.log('Response keys:', Object.keys(response));
+      console.log('Response.data keys:', response.data ? Object.keys(response.data) : 'no data');
+      
+      // Try to extract token from different possible locations
+      let token;
+      let userData;
+      
+      if (response.data) {
+        // Check multiple possible token locations
+        if (response.data.token) {
+          token = response.data.token;
+          console.log('Token found at: response.data.token');
+        } else if (response.data.access_token) {
+          token = response.data.access_token;
+          console.log('Token found at: response.data.access_token');
+        } else if (response.data.accessToken) {
+          token = response.data.accessToken;
+          console.log('Token found at: response.data.accessToken');
+        } else if (response.data.jwt) {
+          token = response.data.jwt;
+          console.log('Token found at: response.data.jwt');
+        } else if (typeof response.data === 'string') {
+          token = response.data;
+          console.log('Token is the entire response.data as string');
+        } else if (response.data.data && response.data.data.token) {
+          token = response.data.data.token;
+          console.log('Token found at: response.data.data.token');
+        } else {
+          // No token found, log what we have
+          console.log('No token found. Response.data:', JSON.stringify(response.data, null, 2));
+          throw new Error('No authentication token found in response');
+        }
+        
+        // Try to extract user data
+        if (response.data.user) {
+          userData = response.data.user;
+        } else if (response.data.data) {
+          userData = response.data.data;
+        } else if (response.data) {
+          userData = response.data;
+        }
+      }
+      
+      console.log('Extracted token:', token ? `${token.substring(0, 50)}...` : 'null');
+      console.log('Token length:', token?.length);
+      console.log('Token starts with:', token?.substring(0, 20));
+      
+      if (!token || typeof token !== 'string') {
+        console.error('Invalid token received:', token);
+        throw new Error('Invalid authentication token received');
+      }
+      
+      // Decode and validate token
+      const decoded = decodeToken(token);
+      if (!decoded) {
+        console.error('Failed to decode token. Token value:', token);
+        throw new Error('Failed to decode authentication token');
+      }
+      
+      console.log('Token decoded successfully. Payload:', decoded);
+      
+      // Store token
+      localStorage.setItem('token', token);
+      setToken(token);
+      
+      // Set user data
+      if (userData) {
+        setUser(userData);
+        console.log('User set from response:', userData);
+      } else {
+        setUser(decoded);
+        console.log('User set from decoded token:', decoded);
+      }
+      
+      navigate('/dashboard');
+      
+      return response;
+    } catch (error) {
+      console.error('Login error:', error);
+      console.error('Error stack:', error.stack);
+      
+      if (error.response) {
+        console.error('Response error:', error.response.status, error.response.data);
+        throw new Error(error.response.data?.message || `Login failed (${error.response.status})`);
+      } else if (error.request) {
+        console.error('No response received:', error.request);
+        throw new Error('Network error. Please check your connection and ensure backend is running.');
+      } else {
+        throw error;
+      }
+    }
+  };
+
+  const register = async (userData) => {
+    try {
+      const response = await authService.register(userData);
+      return response;
+    } catch (error) {
+      console.error('Registration error:', error);
+      if (error.response) {
+        throw new Error(error.response.data?.message || 'Registration failed');
+      } else if (error.request) {
+        throw new Error('Network error. Please check your connection.');
+      } else {
+        throw error;
+      }
+    }
+  };
+
+  const logout = () => {
+    console.log('Logging out...');
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+    authService.clearAuthToken();
+    navigate('/login');
+  };
+
+  const updateProfile = async (userData) => {
+    try {
+      const response = await authService.updateProfile(user?.id, userData);
+      setUser({ ...user, ...userData });
+      return response;
+    } catch (error) {
+      console.error('Profile update error:', error);
+      throw error;
+    }
+  };
+
+  const hasPermission = (requiredRole) => {
+    if (!user) return false;
+    
+    // Extract role from user object
+    const userRole = user.role || user.authorities?.[0]?.authority?.replace('ROLE_', '') || 'VIEWER';
+    
+    console.log('Checking permission. User role:', userRole, 'Required role:', requiredRole);
+    
+    const roleHierarchy = {
+      VIEWER: ['VIEWER'],
+      STAFF: ['VIEWER', 'STAFF'],
+      MANAGER: ['VIEWER', 'STAFF', 'MANAGER'],
+      ADMIN: ['VIEWER', 'STAFF', 'MANAGER', 'ADMIN']
+    };
+
+    const hasPerm = roleHierarchy[userRole]?.includes(requiredRole) || false;
+    console.log('Permission granted:', hasPerm);
+    
+    return hasPerm;
+  };
+
+  const value = {
+    user,
+    token,
+    loading,
+    login,
+    register,
+    logout,
+    updateProfile,
+    hasPermission,
+    isAuthenticated: !!token
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
