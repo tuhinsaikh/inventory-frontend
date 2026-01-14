@@ -257,6 +257,29 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+
+// const register = async (userData) => {
+//   try {
+//     const response = await authService.register(userData);
+    
+//     // Show success notification
+//     showNotification('Registration successful! Please login with your credentials.', 'success');
+    
+//     // Navigate to login page after a short delay
+//     setTimeout(() => {
+//       navigate('/login');
+//     }, 1500);
+    
+//     return response;
+//   } catch (error) {
+//     showNotification(
+//       error.response?.data?.message || 'Registration failed',
+//       'error'
+//     );
+//     throw error;
+//   }
+// };
+
   const logout = () => {
     console.log('Logging out...');
     localStorage.removeItem('token');

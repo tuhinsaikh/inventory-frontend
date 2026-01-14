@@ -29,7 +29,10 @@ import SalesChart from '../components/dashboard/SalesChart';
 import RecentTransactions from '../components/dashboard/RecentTransactions';
 import { useNotification } from '../context/NotificationContext';
 
+
+
 export default function Dashboard() {
+
   const { showNotification } = useNotification();
   const [timeRange, setTimeRange] = useState('week');
 
@@ -37,15 +40,15 @@ export default function Dashboard() {
     ['dashboard', timeRange],
     () => dashboardService.getDashboardStats(timeRange),
     {
-      refetchInterval: 30000, // Auto-refresh every 30 seconds
+      refetchInterval: 60000, // Auto-refresh every 60 seconds
     }
   );
 
-  useEffect(() => {
-    if (error) {
-      showNotification('Failed to load dashboard data', 'error');
-    }
-  }, [error, showNotification]);
+  // useEffect(() => {
+  //   if (error) {
+  //     showNotification('Failed to load dashboard data', 'error');
+  //   }
+  // }, [error, showNotification]);
 
   const stats = [
     {
