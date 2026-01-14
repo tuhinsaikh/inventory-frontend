@@ -14,7 +14,11 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
+      const parts = token.split('.');
+      console.log(`Token parts from api: ${parts.length}`, parts);
+      // config.headers.Authorization = `Bearer ${parts[parts.length-1]}`;
       config.headers.Authorization = `Bearer ${token}`;
+
     }
     return config;
   },

@@ -13,10 +13,12 @@ import {
   CardContent,
   IconButton,
   Avatar,
+  CircularProgress
 } from '@mui/material';
 import {
   Delete as DeleteIcon,
   Upload as UploadIcon,
+  Save as SaveIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -109,18 +111,22 @@ export default function ProductForm({ productId, onSuccess, onCancel }) {
 
   const mutation = useMutation(
     (data) =>
+    
       productId
         ? productService.updateProduct(productId, data)
         : productService.createProduct(data),
     {
       onSuccess: () => {
-        showNotification(
-          productId ? 'Product updated successfully' : 'Product created successfully',
-          'success'
-        );
+        
+        // showNotification(
+        //   productId ? 'Product updated successfully' : 'Product created successfully',
+        //   'success'
+        // );
+
         onSuccess();
       },
       onError: (error) => {
+        console.log("productId: "+productId)
         showNotification(
           error.response?.data?.message || 'Operation failed',
           'error'
@@ -485,13 +491,17 @@ export default function ProductForm({ productId, onSuccess, onCancel }) {
         <Button onClick={onCancel} variant="outlined">
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disabled={mutation.isLoading}>
-          {mutation.isLoading
-            ? 'Saving...'
-            : productId
-            ? 'Update Product'
-            : 'Create Product'}
-        </Button>
+        <Button
+        type="submit"
+        variant="contained"
+        disabled={mutation.isLoading}
+        startIcon={mutation.isLoading ? <CircularProgress size={20} /> : <SaveIcon />}
+      >
+        {mutation.isLoading 
+          ? productId ? 'Updating...' : 'Creating...' 
+          : productId ? 'Update Product' : 'Create Product'
+        }
+      </Button>
       </Box>
     </Box>
   );

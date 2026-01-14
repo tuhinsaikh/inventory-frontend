@@ -19,50 +19,54 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // const decodeToken = useCallback((tokenString) => {
-  //   console.log('Decoding token:', tokenString ? `${tokenString.substring(0, 50)}...` : 'null');
-    
-  //   if (!tokenString || typeof tokenString !== 'string') {
-  //     console.error('Token is not a valid string');
-  //     return null;
-  //   }
+  // Helper function to get permissions by role
+  const getPermissionsByRole = useCallback((role) => {
+    const permissions = {
+      ADMIN: ['dashboard', 'products', 'inventory', 'orders', 'suppliers', 'customers', 'reports', 'users', 'settings'],
+      MANAGER: ['dashboard', 'products', 'inventory', 'orders', 'suppliers', 'customers', 'reports'],
+      STAFF: ['dashboard', 'products', 'inventory', 'orders'],
+      VIEWER: ['dashboard', 'products', 'inventory']
+    };
+    return permissions[role] || permissions.VIEWER;
+  }, []);
 
-  //   try {
-  //     // Check if it looks like a JWT (should have 3 parts separated by dots)
-  //     const parts = tokenString.split('.');
-  //     // if (parts.length !== 3) {
-  //     //   console.error('Token does not have 3 parts. Parts:', parts.length);
-  //     //   console.error('Token preview:', tokenString.substring(0, 100));
-  //     //   return null;
-  //     // }
-  //     console.log('Token decoded started:', parts[2]);
-  //     const decoded = jwtDecode(parts[2]);
-  //     console.log('Token decoded successfully:', decoded);
-  //     return decoded;
-  //   } catch (error) {
-  //     console.error('Token decode error:', error.message);
-  //     console.error('Error details:', error);
-  //     const decoded1 = jwtDecode("eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9Lnsic3ViIjoidHVoaW4iLCJpYXQiOjE3NjgzMDUxODAsImV4cCI6MTc2ODM5MTU4MH0=");
-  //     console.log('decoded1:', decoded1);
-  //     // Try to see what's in the token
-  //     try {
-  //       const parts = tokenString.split('.');
-  //       console.log('Token parts count:', parts.length);
-  //       console.log('Part 1 (header):', parts[0]);
-  //       console.log('Part 2 (payload) base64:', parts[1]);
-        
-  //       // Try to decode the payload manually
-  //       if (parts[1]) {
-  //         const payload = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
-  //         console.log('Manual decode payload:', payload);
-  //       }
-  //     } catch (e) {
-  //       console.error('Failed to manually decode token:', e);
-  //     }
-      
-  //     return null;
-  //   }
-  // }, []);
+  // Function to extract and format user data from token
+  const extractUserFromToken = useCallback((decodedToken, responseData = null) => {
+    if (!decodedToken) return null;
+    
+    console.log('Extracting user from token:', decodedToken);
+    
+    // Extract username from token
+    const username = decodedToken.sub || decodedToken.username || 'Guest';
+    
+    // Extract role - default to ADMIN for testing
+    // In production, this should come from your backend response
+    let role = 'ADMIN'; // Hardcoded for testing
+    
+    // If we have response data, try to get role from there
+    if (responseData?.role) {
+      role = responseData.role;
+    } else if (responseData?.data?.role) {
+      role = responseData.data.role;
+    }
+    
+    // Create properly formatted user object
+    const formattedUser = {
+      id: decodedToken.sub || username,
+      username: username,
+      email: decodedToken.email || `${username}@example.com`,
+      firstName: username.charAt(0).toUpperCase() + username.slice(1), // Capitalize first letter
+      lastName: '',
+      role: role.toUpperCase(),
+      permissions: getPermissionsByRole(role.toUpperCase()),
+      // Keep original token data for reference
+      tokenData: decodedToken
+    };
+    
+    console.log('Formatted user:', formattedUser);
+    return formattedUser;
+  }, [getPermissionsByRole]);
+
   const decodeToken = useCallback((tokenString) => {
     if (!tokenString) return null;
   
@@ -118,25 +122,29 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
   
-  
-
   useEffect(() => {
     if (token) {
       console.log('Initial token from localStorage:', token ? 'exists' : 'null');
       const decoded = decodeToken(token);
       if (decoded) {
-        setUser(decoded);
-        authService.setAuthToken(token);
-        console.log('User set from token:', decoded);
+        // Use extractUserFromToken to format the user properly
+        const formattedUser = extractUserFromToken(decoded);
+        if (formattedUser) {
+          setUser(formattedUser);
+          localStorage.setItem('user', JSON.stringify(formattedUser));
+          authService.setAuthToken(token);
+          console.log('User set from token (formatted):', formattedUser);
+        } else {
+          console.log('Failed to format user from token');
+          logout();
+        }
       } else {
         console.log('Invalid token in localStorage, clearing...');
-        localStorage.removeItem('token');
-        setToken(null);
-        setUser(null);
+        logout();
       }
     }
     setLoading(false);
-  }, [token, decodeToken]);
+  }, [token, decodeToken, extractUserFromToken]);
 
   const login = async (credentials) => {
     console.log('Login attempt with credentials:', { ...credentials, password: '***' });
@@ -152,7 +160,6 @@ export const AuthProvider = ({ children }) => {
       
       // Try to extract token from different possible locations
       let token;
-      let userData;
       
       if (response.data) {
         // Check multiple possible token locations
@@ -179,15 +186,6 @@ export const AuthProvider = ({ children }) => {
           console.log('No token found. Response.data:', JSON.stringify(response.data, null, 2));
           throw new Error('No authentication token found in response');
         }
-        
-        // Try to extract user data
-        if (response.data.user) {
-          userData = response.data.user;
-        } else if (response.data.data) {
-          userData = response.data.data;
-        } else if (response.data) {
-          userData = response.data;
-        }
       }
       
       console.log('Extracted token:', token ? `${token.substring(0, 50)}...` : 'null');
@@ -212,14 +210,17 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('token', token);
       setToken(token);
       
-      // Set user data
-      if (userData) {
-        setUser(userData);
-        console.log('User set from response:', userData);
-      } else {
-        setUser(decoded);
-        console.log('User set from decoded token:', decoded);
+      // Create properly formatted user object using extractUserFromToken
+      const formattedUser = extractUserFromToken(decoded, response.data);
+      if (!formattedUser) {
+        console.error('Failed to create user object from decoded token');
+        throw new Error('Failed to create user session');
       }
+      
+      // Store formatted user
+      setUser(formattedUser);
+      localStorage.setItem('user', JSON.stringify(formattedUser));
+      console.log('User set (formatted):', formattedUser);
       
       navigate('/dashboard');
       
@@ -259,6 +260,7 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     console.log('Logging out...');
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
     setToken(null);
     setUser(null);
     authService.clearAuthToken();
@@ -269,6 +271,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authService.updateProfile(user?.id, userData);
       setUser({ ...user, ...userData });
+      localStorage.setItem('user', JSON.stringify({ ...user, ...userData }));
       return response;
     } catch (error) {
       console.error('Profile update error:', error);

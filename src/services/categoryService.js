@@ -1,8 +1,18 @@
 import api from './api';
 
 export const categoryService = {
-  getAllCategories() {
-    return api.get('/categories');
+  // getAllCategories() {
+  //   return api.get('/categories');
+  // },
+
+  getAllCategories: async () => {
+    try {
+      const response = await api.get('/categories');
+      // If your API returns { data: [], message: 'success' } structure
+      return response.data.data; // or just response.data depending on your API
+    } catch (error) {
+      throw error;
+    }
   },
 
   getActiveCategories() {

@@ -18,6 +18,11 @@ export const productService = {
   },
 
   updateProduct(id, productData) {
+    console.log('🔍 updateProduct called with:');
+    console.log('ID:', id);
+    console.log('Data:', productData);
+    console.log('URL being called:', `/products/${id}`);
+    
     return api.put(`/products/${id}`, productData);
   },
 
@@ -35,6 +40,25 @@ export const productService = {
 
   getProductsByCategory(categoryId) {
     return api.get(`/products/category/${categoryId}`);
+  },
+  getProductWithInventory(id) {
+    return Promise.all([
+      this.getProductById(id),
+      this.getProductInventory(id)
+    ]).then(([product, inventory]) => ({
+      ...product,
+      inventory: inventory || []
+    }));
+  },
+
+  // Get product inventory separately
+  getProductInventory(productId) {
+    return api.get(`/inventory/product/${productId}`)
+      .then(response => response.data?.data || response.data || [])
+      .catch(error => {
+        console.error('Error fetching inventory:', error);
+        return [];
+      });
   },
 
   uploadProductImage(imageFile) {

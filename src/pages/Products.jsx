@@ -61,39 +61,106 @@ export default function Products() {
   const isEditMode = location.pathname.includes('/edit');
   const isCreateMode = location.pathname.includes('/new');
 
-  // Fetch products
-  const { data: products, isLoading } = useQuery(
+  // Add more detailed logging
+  const [shouldFetch, setShouldFetch] = useState(true);
+  const [productToDelete, setProductToDelete] = useState(null);
+
+
+  const { data: products, isLoading, refetch } = useQuery(
     ['products', searchTerm, categoryFilter, statusFilter],
     () => productService.getAllProducts({
       search: searchTerm,
       category: categoryFilter !== 'all' ? categoryFilter : undefined,
       status: statusFilter,
     })
+    .then(axiosResponse => {
+      console.log("Full axios response:", axiosResponse);
+      
+      // axiosResponse is: {data: {...}, status: 200, headers: {...}, ...}
+      // Your actual data is in axiosResponse.data
+      
+      const apiResponse = axiosResponse.data; // This is {success: true, message: '...', data: [...]}
+      console.log("API response:", apiResponse);
+      
+      // Now extract the products array
+      if (apiResponse && apiResponse.data && Array.isArray(apiResponse.data)) {
+        return apiResponse.data; // This is your products array
+      }
+      
+      return apiResponse || [];
+    }),
+    {
+      enabled: shouldFetch,
+      onSuccess: (data) => {
+        console.log('Final products data:', data);
+        console.log('Is array?', Array.isArray(data));
+        setShouldFetch(false);
+      }
+    }
   );
+  
+  // Manually trigger fetch when needed
+  useEffect(() => {
+    refetch();
+  }, [searchTerm, categoryFilter, statusFilter]);
 
-  // Fetch categories for filter
-  const { data: categories } = useQuery(
+// Log React Query state
+  console.log('📈 React Query State:', {
+    isLoading,
+    products,
+    queryKey: ['products', searchTerm, categoryFilter, statusFilter]
+  });
+
+  console.log("products: "+products);
+  const { data: categoriesResponse } = useQuery(
     'categories',
     categoryService.getAllCategories
   );
-
+  
+  // Extract categories array from response
+  const categories = categoriesResponse?.data || categoriesResponse || [];
   // Delete mutation
   const deleteMutation = useMutation(
-    (id) => productService.deleteProduct(id),
+    (id) => {
+      console.log('🚀 Calling delete API with ID:', id);
+      return productService.deleteProduct(id);
+    },
     {
       onSuccess: () => {
-        queryClient.invalidateQueries('products');
+        console.log('✅ Delete successful');
+        queryClient.invalidateQueries(['products', searchTerm, categoryFilter, statusFilter]);
         showNotification('Product deleted successfully', 'success');
         setOpenDeleteDialog(false);
+        setProductToDelete(null);
+        refetch(); // Force refetch
       },
       onError: (error) => {
+        console.error('❌ Delete error:', error);
         showNotification(
           error.response?.data?.message || 'Failed to delete product',
           'error'
         );
+        setOpenDeleteDialog(false);
+        setProductToDelete(null);
       },
     }
   );
+  // const deleteMutation = useMutation(
+  //   (id) => productService.deleteProduct(id),
+  //   {
+  //     onSuccess: () => {
+  //       queryClient.invalidateQueries('products');
+  //       showNotification('Product deleted successfully', 'success');
+  //       setOpenDeleteDialog(false);
+  //     },
+  //     onError: (error) => {
+  //       showNotification(
+  //         error.response?.data?.message || 'Failed to delete product',
+  //         'error'
+  //       );
+  //     },
+  //   }
+  // );
 
   // Deactivate mutation
   const deactivateMutation = useMutation(
@@ -127,28 +194,93 @@ export default function Products() {
   };
 
   const handleEdit = () => {
-    navigate(`/products/${selectedProduct.id}/edit`);
+    console.log('Editing product with ID:', selectedProduct.productId);
+    console.log('Navigating to:', `/products/edit/${selectedProduct.productId}`);
+    navigate(`/products/edit/${selectedProduct.productId}`);
     handleMenuClose();
   };
 
   const handleView = () => {
-    navigate(`/products/${selectedProduct.id}`);
+    navigate(`/products/${selectedProduct.productId}`);
     handleMenuClose();
   };
 
+  // const handleDelete = () => {
+  //   setOpenDeleteDialog(true);
+  //   handleMenuClose();
+  // };
+
   const handleDelete = () => {
-    setOpenDeleteDialog(true);
+    console.log('🗑️ Deleting product:', selectedProduct);
+    setProductToDelete(selectedProduct);
     handleMenuClose();
+    setOpenDeleteDialog(true);
   };
 
   const handleDeactivate = () => {
-    deactivateMutation.mutate(selectedProduct.id);
+    deactivateMutation.mutate(selectedProduct.productId);
     handleMenuClose();
+    refetch();
   };
 
+  // const confirmDelete = () => {
+  //   deleteMutation.mutate(selectedProduct.productId);
+  // };
+
   const confirmDelete = () => {
-    deleteMutation.mutate(selectedProduct.id);
+    console.log('✅ Confirming delete for:', productToDelete);
+    
+    if (productToDelete?.productId) {
+      deleteMutation.mutate(productToDelete.productId);
+    } else {
+      console.error('❌ No product ID to delete');
+      showNotification('No product selected for deletion', 'error');
+      setOpenDeleteDialog(false);
+    }
   };
+
+  const getEditProductId = () => {
+    const path = location.pathname;
+    console.log('🔍 Current path:', path);
+    
+    // Handle both patterns:
+    // /products/edit/1
+    // /products/1/edit (if you use different routing)
+    
+    // Split by '/' and filter out empty strings
+    const parts = path.split('/').filter(part => part);
+    console.log('🔍 Path parts:', parts);
+    
+    // If we have /products/edit/1, parts = ['products', 'edit', '1']
+    // The ID should be the last part after 'edit'
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i] === 'edit' && i + 1 < parts.length) {
+        const id = parts[i + 1];
+        console.log('🔍 Found productId after "edit":', id);
+        return id;
+      }
+    }
+    
+    // Alternative: just get the last numeric part
+    const lastPart = parts[parts.length - 1];
+    if (!isNaN(lastPart)) {
+      console.log('🔍 Using last numeric part as productId:', lastPart);
+      return lastPart;
+    }
+    
+    console.warn('⚠️ Could not extract productId from path');
+    return null;
+  };
+  // FIXED: Extract productId from path properly
+  // const productId = React.useMemo(() => {
+  //   const pathSegments = location.pathname.split('/').filter(Boolean);
+  //   const editIndex = pathSegments.indexOf('edit');
+  //   if (editIndex !== -1 && editIndex + 1 < pathSegments.length) {
+  //     return pathSegments[editIndex + 1];
+  //   }
+  //   return null;
+  // }, [location.pathname]);
+
 
   const columns = [
     {
@@ -179,7 +311,7 @@ export default function Products() {
       field: 'category',
       headerName: 'Category',
       width: 150,
-      valueGetter: (params) => params.row.category?.categoryName || 'Uncategorized',
+      valueGetter: (params) => params.row?.categoryName || 'Uncategorized',
     },
     {
       field: 'sellingPrice',
@@ -187,40 +319,64 @@ export default function Products() {
       width: 100,
       renderCell: (params) => `$${params.value.toFixed(2)}`,
     },
-    {
-      field: 'quantity',
-      headerName: 'Stock',
-      width: 120,
-      renderCell: (params) => {
-        const quantity = params.row.inventory?.quantityAvailable || 0;
-        const reorderPoint = params.row.reorderPoint || 0;
+    // {
+    //   field: 'quantity',
+    //   headerName: 'Stock',
+    //   width: 120,
+    //   renderCell: (params) => {
+    //     const quantity = params.row.inventory?.quantityAvailable || 0;
+    //     const reorderPoint = params.row.reorderPoint || 0;
         
-        let color = 'success';
-        if (quantity <= 0) color = 'error';
-        else if (quantity <= reorderPoint) color = 'warning';
+    //     let color = 'success';
+    //     if (quantity <= 0) color = 'error';
+    //     else if (quantity <= reorderPoint) color = 'warning';
         
-        return (
-          <Chip
-            label={quantity}
-            color={color}
-            size="small"
-            variant="outlined"
-          />
-        );
-      },
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      width: 100,
-      renderCell: (params) => (
-        <Chip
-          label={params.row.isActive ? 'Active' : 'Inactive'}
-          color={params.row.isActive ? 'success' : 'default'}
-          size="small"
-        />
-      ),
-    },
+    //     return (
+    //       <Chip
+    //         label={quantity}
+    //         color={color}
+    //         size="small"
+    //         variant="outlined"
+    //       />
+    //     );
+    //   },
+    // },
+    // {
+    //   field: 'status',
+    //   headerName: 'Status',
+    //   width: 100,
+    //   renderCell: (params) => (
+    //     <Chip
+    //       label={params.row.isActive ? 'Active' : 'Inactive'}
+    //       color={params.row.isActive ? 'success' : 'default'}
+    //       size="small"
+    //     />
+    //   ),
+    // },
+    // In your Products.jsx, update the quantity column:
+{
+  field: 'quantity',
+  headerName: 'Stock',
+  width: 120,
+  renderCell: (params) => {
+    // Check if inventory exists in your data structure
+    const quantity = params.row.quantity || params.row.stockQuantity || 0;
+    const reorderPoint = params.row.reorderPoint || 0;
+    
+    let color = 'success';
+    if (quantity <= 0) color = 'error';
+    else if (quantity <= reorderPoint) color = 'warning';
+    
+    return (
+      <Chip
+        label={quantity}
+        color={color}
+        size="small"
+        variant="outlined"
+      />
+    );
+  },
+},
     {
       field: 'actions',
       headerName: 'Actions',
@@ -240,7 +396,7 @@ export default function Products() {
             </IconButton>
             <Menu
               anchorEl={anchorEl}
-              open={Boolean(anchorEl) && selectedProduct?.id === params.row.id}
+              open={Boolean(anchorEl) && selectedProduct?.productId === params.row.productId}
               onClose={handleMenuClose}
             >
               <MenuItem onClick={handleView}>
@@ -358,22 +514,21 @@ export default function Products() {
         </Paper>
 
         {/* Products Grid */}
-        <Paper sx={{ height: 600, width: '100%' }}>
-          <DataGrid
-            rows={products || []}
-            columns={columns}
-            loading={isLoading}
-            pageSize={10}
-            rowsPerPageOptions={[10, 25, 50]}
-            checkboxSelection={false}
-            disableSelectionOnClick
-            onRowClick={(params) => navigate(`/products/${params.id}`)}
-            sx={{
-              '& .MuiDataGrid-cell:focus': { outline: 'none' },
-              '& .MuiDataGrid-row:hover': { cursor: 'pointer' },
-            }}
-          />
-        </Paper>
+        <DataGrid
+        rows={products || []}
+        columns={columns}
+        loading={isLoading}
+        pageSize={10}
+        rowsPerPageOptions={[10, 25, 50]}
+        checkboxSelection={false}
+        disableSelectionOnClick
+        getRowId={(row) => row.productId}  // Add this line
+        onRowClick={(params) => navigate(`/products/${params.id}`)} // Note: params.id will now be productId
+        sx={{
+          '& .MuiDataGrid-cell:focus': { outline: 'none' },
+          '& .MuiDataGrid-row:hover': { cursor: 'pointer' },
+        }}
+      />
 
         {/* Product Form Dialog */}
         {(isCreateMode || isEditMode) && (
@@ -395,6 +550,7 @@ export default function Products() {
                     isCreateMode ? 'Product created successfully' : 'Product updated successfully',
                     'success'
                   );
+                  refetch();
                 }}
                 onCancel={() => navigate('/products')}
               />
@@ -406,10 +562,22 @@ export default function Products() {
         <ConfirmationDialog
           open={openDeleteDialog}
           title="Delete Product"
+          message={`Are you sure you want to delete product "${productToDelete?.productName || 'this product'}"? This action cannot be undone.`}
+          onConfirm={confirmDelete}
+          onCancel={() => {
+            setOpenDeleteDialog(false);
+            setProductToDelete(null);
+          }}
+          confirmText="Delete"
+          cancelText="Cancel"
+        />
+        {/* <ConfirmationDialog
+          open={openDeleteDialog}
+          title="Delete Product"
           message="Are you sure you want to delete this product? This action cannot be undone."
           onConfirm={confirmDelete}
           onCancel={() => setOpenDeleteDialog(false)}
-        />
+        /> */}
       </Box>
     </>
   );

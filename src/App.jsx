@@ -21,6 +21,8 @@ const Customers = React.lazy(() => import('./pages/Customers'));
 const Users = React.lazy(() => import('./pages/Users'));
 const Reports = React.lazy(() => import('./pages/Reports'));
 const Settings = React.lazy(() => import('./pages/Settings'));
+// Add this import with the other lazy imports:
+const Warehouses = React.lazy(() => import('./components/common/WarehouseSelect'));
 
 const LoadingFallback = () => (
   <Box 
@@ -53,7 +55,7 @@ function App() {
                 <Route path="/products" element={<Products />} />
                 <Route path="/products/new" element={<Products />} />
                 <Route path="/products/:id" element={<Products />} />
-                <Route path="/products/:id/edit" element={<Products />} />
+                <Route path="/products/edit/:id" element={<Products />} />
                 
                 {/* Inventory Module */}
                 <Route path="/inventory" element={<Inventory />} />
@@ -88,6 +90,11 @@ function App() {
                 <Route element={<RoleBasedRoute allowedRoles={['ADMIN', 'MANAGER']} />}>
                   <Route path="/reports" element={<Reports />} />
                 </Route>
+                  {/* Warehouse Management - Admin Only */}
+                  <Route path="/warehouses" element={<Warehouses />} />
+                  <Route path="/warehouses/new" element={<Warehouses />} />
+                  <Route path="/warehouses/:id" element={<Warehouses />} />
+                  <Route path="/warehouses/edit/:id" element={<Warehouses />} />
                 
                 {/* Settings */}
                 <Route path="/settings" element={<Settings />} />

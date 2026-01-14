@@ -22,10 +22,11 @@ import {
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Link as RouteLink, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import Register from '../auth/Register';
 
 const schema = yup.object({
   username: yup.string().required('Username is required'),
@@ -178,7 +179,10 @@ export default function Login() {
               </Button>
 
               <Box sx={{ textAlign: 'center', mb: 3 }}>
-                <Link component={RouterLink} to="/register" variant="body2">
+                {/* <Link component={Register} to="/register" variant="body2">
+                  Don't have an account? Sign up
+                </Link> */}
+                <Link component={RouteLink} to="/register" variant="body2">
                   Don't have an account? Sign up
                 </Link>
               </Box>
